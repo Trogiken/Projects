@@ -31,6 +31,7 @@ class NinjaRMMAPI:
     Class for interacting with the NinjaRMM API.
 
     Environment Variables:
+        NINJA_ENVIRONMENT: str
         NINJA_CLIENT_ID: str
         NINJA_CLIENT_SECRET: str
         NINJA_BASE_URL: str
@@ -49,6 +50,7 @@ class NinjaRMMAPI:
     """
 
     def __init__(self):
+        self._environment = os.getenv("NINJA_ENVIRONMENT")
         self._client_id = os.getenv("NINJA_CLIENT_ID")
         self._client_secret = os.getenv("NINJA_CLIENT_SECRET")
         self._base_url = os.getenv("NINJA_BASE_URL")
@@ -56,19 +58,25 @@ class NinjaRMMAPI:
 
         missing_env_vars = [
             var for var, value in {
-            "NINJA_CLIENT_ID": self._client_id,
-            "NINJA_CLIENT_SECRET": self._client_secret,
-            "NINJA_BASE_URL": self._base_url,
-            "NINJA_DOCS_PATH": self._docs_path,
+                "NINJA_ENVIRONMENT": self._environment,
+                "NINJA_CLIENT_ID": self._client_id,
+                "NINJA_CLIENT_SECRET": self._client_secret,
+                "NINJA_BASE_URL": self._base_url,
+                "NINJA_DOCS_PATH": self._docs_path,
             }.items() if not value
         ]
+        valid_environments = ["app", "us2", "ca", "eu", "oc"]
 
         if missing_env_vars:
             raise ValueError(
                 f"The following environment variables are not set: {', '.join(missing_env_vars)}"
             )
+        if not self._environment in valid_environments:
+            raise ValueError(
+                f"Invalid NINJA_ENVIRONMENT. Must be one of: {', '.join(valid_environments)}"
+            )
 
-        self._token_url = "https://app.ninjarmm.com/ws/oauth/token"
+        self._token_url = f"https://{self._environment}.ninjarmm.com/ws/oauth/token"
         self._oauth: OAUTHResponse = self._request_credentials()
         self.documentation = {}
         self.refresh_documentation()
