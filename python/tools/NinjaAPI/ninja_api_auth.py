@@ -54,14 +54,19 @@ class NinjaRMMAPI:
         self._base_url = os.getenv("NINJA_BASE_URL")
         self._docs_path = os.getenv("NINJA_DOCS_PATH")
 
-        if not self._client_id:
-            raise ValueError("NINJA_CLIENT_ID environment variable is not set.")
-        if not self._client_secret:
-            raise ValueError("NINJA_CLIENT_SECRET environment variable is not set")
-        if not self.base_url:
-            raise ValueError("NINJA_BASE_URL environment variable is not set")
-        if not self.docs_path:
-            raise ValueError("NINJA_DOCS_PATH environment variable is not set")
+        missing_env_vars = [
+            var for var, value in {
+            "NINJA_CLIENT_ID": self._client_id,
+            "NINJA_CLIENT_SECRET": self._client_secret,
+            "NINJA_BASE_URL": self._base_url,
+            "NINJA_DOCS_PATH": self._docs_path,
+            }.items() if not value
+        ]
+
+        if missing_env_vars:
+            raise ValueError(
+                f"The following environment variables are not set: {', '.join(missing_env_vars)}"
+            )
 
         self._token_url = "https://app.ninjarmm.com/ws/oauth/token"
         self._oauth: OAUTHResponse = self._request_credentials()
