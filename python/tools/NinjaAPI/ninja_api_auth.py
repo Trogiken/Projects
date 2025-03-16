@@ -56,7 +56,7 @@ class NinjaRMMAPI:
         self._base_url = os.getenv("NINJA_BASE_URL")
         self._docs_path = os.getenv("NINJA_DOCS_PATH")
 
-        missing_env_vars = [
+        _missing_env_vars = [
             var for var, value in {
                 "NINJA_ENVIRONMENT": self._environment,
                 "NINJA_CLIENT_ID": self._client_id,
@@ -65,15 +65,15 @@ class NinjaRMMAPI:
                 "NINJA_DOCS_PATH": self._docs_path,
             }.items() if not value
         ]
-        valid_environments = ["app", "us2", "ca", "eu", "oc"]
+        _valid_environments = ["app", "us2", "ca", "eu", "oc"]
 
-        if missing_env_vars:
+        if _missing_env_vars:
             raise ValueError(
-                f"The following environment variables are not set: {', '.join(missing_env_vars)}"
+                f"The following environment variables are not set: {', '.join(_missing_env_vars)}"
             )
-        if not self._environment in valid_environments:
+        if not self._environment in _valid_environments:
             raise ValueError(
-                f"Invalid NINJA_ENVIRONMENT. Must be one of: {', '.join(valid_environments)}"
+                f"Invalid NINJA_ENVIRONMENT. Must be one of: {', '.join(_valid_environments)}"
             )
 
         self._token_url = f"https://{self._environment}.ninjarmm.com/ws/oauth/token"
