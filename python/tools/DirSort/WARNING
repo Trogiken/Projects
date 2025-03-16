@@ -1,0 +1,2 @@
+Using the INTENSE scan will recursively sort through subdirectorys.
+If an important parent directory is selected as the 'gather directory' (such as C:/), the program will sort all the files on your C: drive.
