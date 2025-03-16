@@ -1,7 +1,8 @@
 """Module for communicating with NinjaRMM API."""
 
 from logging import getLogger
-from typing import Union, Literal
+from urllib.parse import urljoin
+from typing import Literal
 from dataclasses import dataclass, field
 import time
 import os
@@ -20,13 +21,9 @@ class OAUTHResponse:
     scope: str
     obtained_at: float = field(default_factory=time.time, init=False)
 
-    def __str__(self):
-        return f"access_token: {self.access_token}, token_type: {self.token_type}, " \
-               f"expires_in: {self.expires_in}, scope: {self.scope}, obtained_at: {self.obtained_at}"
-
-    def __repr__(self):
-        return f"OAUTHResponse(access_token={self.access_token}, token_type={self.token_type}, " \
-               f"expires_in={self.expires_in}, scope={self.scope}, obtained_at={self.obtained_at})"
+    def is_expired(self) -> bool:
+        """Check if the token is expired."""
+        return time.time() > self.obtained_at + self.expires_in
 
 
 class NinjaRMMAPI:
@@ -34,10 +31,21 @@ class NinjaRMMAPI:
     Class for interacting with the NinjaRMM API.
 
     Environment Variables:
-    NINJA_CLIENT_ID: str
-    NINJA_CLIENT_SECRET: str
-    NINJA_BASE_URL: str
-    NINJA_DOCS_PATH: str
+        NINJA_CLIENT_ID: str
+        NINJA_CLIENT_SECRET: str
+        NINJA_BASE_URL: str
+        NINJA_DOCS_PATH: str
+
+    Attributes:
+        base_url (str): The base URL for the API.
+        docs_path (str): The path to the API documentation.
+        documentation (dict): The API documentation.
+
+    Methods:
+        request(method, path, **kwargs): Make a request to the NinjaRMM API.
+        refresh_documentation(): Refresh API documentation.
+        get_sorted_docs(): Return sorted documentation.
+        url_base_join(*args): Join the base URL with additional path components.
     """
 
     def __init__(self):
@@ -57,10 +65,8 @@ class NinjaRMMAPI:
 
         self._token_url = "https://app.ninjarmm.com/ws/oauth/token"
         self._oauth: OAUTHResponse = self._request_credentials()
-        self._primary_headers = {
-            "accept": "application/json",
-            "Authorization": f"{self._oauth.token_type} {self._oauth.access_token}"
-        }
+        self.documentation = {}
+        self.refresh_documentation()
 
     @property
     def base_url(self) -> str:
@@ -93,123 +99,77 @@ class NinjaRMMAPI:
         )
         return oauth_response
 
-    def _is_token_expired(self) -> bool:
-        """Check if the access token is expired."""
-        expired = time.time() > self._oauth.obtained_at + self._oauth.expires_in
-        if expired:
-            LOGGER.info("OAuth token has expired.")
-        return expired
-
     def _authenticate(self) -> None:
         """Ensure the client is authenticated by checking token expiration."""
-        if self._is_token_expired():
-            LOGGER.info("Re-authenticating due to expired token.")
+        if self._oauth.is_expired():
+            LOGGER.info("OAuth token expired, refreshing.")
             self._oauth = self._request_credentials()
 
-    def urljoin(self, *args) -> str:
-        """Join URL parts."""
-        return "/".join(map(lambda x: str(x).strip("/"), args))
+    def url_base_join(self, *args) -> str:
+        """Join the base URL with additional path components."""
+        return urljoin(self.base_url, "/".join(args))
 
     def request(
             self,
-            request_type: Union[
-                Literal["get"], Literal["post"], Literal["put"], Literal["delete"], Literal["patch"]
-                ],
+            method: Literal["get", "post", "put", "delete", "patch"],
             path: str,
-            params=None,
-            data=None,
-            timeout: int = 10
+            **kwargs
         ) -> dict:
         """Make a request to NinjaRMM API."""
-        LOGGER.info("Making %s request to URL: %s", request_type.upper(), path)
-        if request_type == "get":
-            request_method = requests.get
-        elif request_type == "post":
-            request_method = requests.post
-        elif request_type == "put":
-            request_method = requests.put
-        elif request_type == "delete":
-            request_method = requests.delete
-        elif request_type == "patch":
-            request_method = requests.patch
-        else:
-            raise ValueError("Invalid request type.")
+        LOGGER.info("Making %s request to URL: %s", method.upper(), path)
 
         self._authenticate()
-        response = request_method(
-            self.urljoin(self.base_url, path),
-            headers=self._primary_headers,
-            data=data, timeout=timeout,
-            params=params
-            )
+        response = getattr(requests, method)(
+            url=self.url_base_join(path),
+            headers={
+                "accept": "application/json",
+                "Authorization": f"{self._oauth.token_type} {self._oauth.access_token}"
+            },
+            timeout=kwargs.pop("timeout", 10),
+            **kwargs
+        )
         response.raise_for_status()
         return response.json()
 
-    def get_docs(self) -> dict:
-        """Get the API documentation."""
-        LOGGER.info("Fetching API documentation.")
-        return self.request("get", self.docs_path)
+    def refresh_documentation(self) -> dict:
+        """Refresh API Documentation."""
+        LOGGER.info("Refreshing API documentation.")
+        self.documentation = self.request("get", self.docs_path)
 
-    def get_openapi_version(self) -> str:
-        """Get the OpenAPI version from the API documentation."""
-        LOGGER.info("Fetching OpenAPI version.")
-        return self.get_docs()["openapi"]
-
-    def get_docs_tags(self) -> list:
-        """Get the tags from the API documentation."""
-        LOGGER.info("Fetching API documentation tags.")
-        return list(self.get_docs()["tags"])
-
-    def get_docs_paths(self) -> dict:
-        """Get the paths from the API documentation."""
-        LOGGER.info("Fetching API documentation paths.")
-        return self.get_docs()["paths"]
-
-    def get_docs_schema(self) -> dict:
-        """Get the schema from the API documentation."""
-        LOGGER.info("Fetching API documentation schema.")
-        return self.get_docs()["components"]["schemas"]
-
-    def get_docs_info(self) -> dict:
-        """Get the info from the API documentation."""
-        LOGGER.info("Fetching API documentation info.")
-        return self.get_docs()["info"]
-
-    def get_docs_sorted_paths(self) -> dict:
+    def get_sorted_docs(self) -> dict:
         """
-        Use tags to sort paths into a dictionary.
+        Return sorted documentation.
 
         Example Query:
-        sorted_paths = api.get_docs_sorted_paths()
-        sorted_paths["organization checklists"]["methods"]["get"]["getClientChecklist"]["path"])
+        sorted_paths = api.get_sorted_docs()
+        sorted_paths["paths"]["system"]["methods"]["get"]["getOrganizations"]["path"]
         """
         LOGGER.info("Sorting API documentation paths by tags.")
-        tags = self.get_docs_tags()
-        paths = self.get_docs_paths()
-        sorted_paths = {
-            tag["name"].casefold(): {
-            "description": tag["description"],
-            "methods": {
-                "get": {},
-                "post": {},
-                "put": {},
-                "delete": {},
-                "patch": {}
-            }
-            } for tag in tags
+        sorted_docs = {
+            "openapi_version": self.documentation.get("openapi", ""),
+            "info": self.documentation.get("info", {}),
+            "security": self.documentation.get("security", []),
+            "tags": self.documentation.get("tags", []),
+            "paths": {
+                tag["name"].lower(): {
+                    "description": tag["description"],
+                    "methods": {}
+                    } for tag in self.documentation["tags"]
+                },
+            "components": self.documentation.get("components", {})
         }
 
-        for path, path_data in paths.items():
-            for method, method_data in path_data.items():
-                for tag in method_data["tags"]:
-                    tag_key = tag.casefold()
-                    sorted_paths[tag_key]["methods"][method][method_data["operationId"]] = {
+        for path, methods in self.documentation["paths"].items():
+            for method, details in methods.items():
+                for tag in details["tags"]:
+                    sorted_docs["paths"][tag.lower()]["methods"].setdefault(
+                        method, {}
+                    )[details["operationId"]] = {
                         "path": path,
-                        "summary": method_data["summary"],
-                        "description": method_data["description"],
-                        "parameters": method_data.get("parameters", []),
-                        "requestBody": method_data.get("requestBody", {}),
-                        "responses": method_data.get("responses", {})
+                        "summary": details.get("summary", ""),
+                        "description": details.get("description", ""),
+                        "parameters": details.get("parameters", []),
+                        "requestBody": details.get("requestBody", {}),
+                        "responses": details.get("responses", {})
                     }
-
-        return sorted_paths
+        return sorted_docs
