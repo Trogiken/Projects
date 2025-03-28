@@ -1,0 +1,15 @@
+{
+    "appName": "CacheLauncher",
+    "version": "1.0.0",
+    "settings": {
+        "ui": {
+            "gui": false,
+            "theme": "light"
+        },
+        "logLevel": "debug"
+    },
+    "paths": {
+        "cacheDirectory": "",
+        "logFile": "./logs/cache_launcher.log"
+    }
+}
